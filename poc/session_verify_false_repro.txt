@@ -1,0 +1,44 @@
+Reproduction steps (local, safe):
+
+
+# from the Desktop (where mock_gg_api.py, cert.pem, key.pem live)
+# 1) Start the mock server (in background)
+nohup python3 mock_gg_api.py --port 8443 > mock_gg_api.log 2>&1 &
+
+
+# 2) Create small test folder
+mkdir -p ~/ggshield-test
+echo "secret=TEST_SECRET_VALUE" > ~/ggshield-test/test.txt
+
+
+# 3) Configure ggshield to use the local instance and set token
+ggshield config set instance https://localhost:8443
+export GITGUARDIAN_API_URL="https://localhost:8443"
+export GITGUARDIAN_API_KEY="DUMMY_TOKEN"
+
+
+# 4) Demonstrate TLS enforcement (secure mode) — expected: certificate verification error
+GGSHIELD_DEBUG=1 ggshield secret scan path ~/ggshield-test --recursive
+
+
+# 5) Demonstrate insecure bypass (insecure mode) — expected: client connects to mock
+GGSHIELD_DEBUG=1 ggshield secret scan path ~/ggshield-test --allow-self-signed --recursive --verbose
+
+
+# 6) Short curl check (replicate ggshield multiscan POST)
+curl -k -s -D - \
+-H "Authorization: Token DUMMY_TOKEN" \
+-H "Content-Type: application/json" \
+-d '[{"file_path":"/Users/tanish/ggshield-test/test.txt"}]' \
+"https://localhost:8443/exposed/v1/multiscan?all_secrets=True" | sed -n '1,200p'
+
+
+# 7) Local PoC using Python (requests)
+python3 poc/mitm_intercept_demo.py
+
+
+# Artifacts to collect for advisory
+# - mock_gg_api.log
+# - ggshield_full.log (GGSHIELD_DEBUG output saved)
+# - curl output showing JSON response
+# - mitm_intercept_demo.py output
